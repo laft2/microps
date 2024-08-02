@@ -34,9 +34,37 @@ int net_device_register(struct net_device *dev) {
   return 0;
 }
 
-static int net_device_open(struct net_device *dev) {}
+static int net_device_open(struct net_device *dev) {
+  if (NET_DEVICE_IS_UP(dev)) {
+    errorf("already open, dev=%s", dev->name);
+    return -1;
+  }
+  if (dev->ops->open) {
+    if (dev->ops->open(dev) == -1) {
+      errorf("failure, dev=%s", dev->name);
+      return -1;
+    }
+  }
+  dev->flags |= NET_DEVICE_FLAG_UP;
+  infof("dev=%s, state=%s", dev->name, NET_DEVICE_STATE(dev));
+  return 0;
+}
 
-static int net_device_close(struct net_device *dev) {}
+static int net_device_close(struct net_device *dev) {
+  if (!NET_DEVICE_IS_UP(dev)) {
+    errof("not open, dev=%s", dev->name);
+    return -1;
+  }
+  if (dev->ops->close) {
+    if (dev->ops->close(dev) == -1) {
+      errorf("failure, dev=%s", dev->name);
+      return -1;
+    }
+  }
+  dev->flags &= ~NET_DEVICE_FLAG_UP;
+  infof("dev=%s, state=%s", dev->name, NET_DEVICE_STATE(dev));
+  return 0;
+}
 
 int net_device_output(struct net_device *dev, uint16_t type,
                       const uint8_t *data, size_t len, const void *dst) {}
