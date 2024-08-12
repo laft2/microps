@@ -123,6 +123,7 @@ int net_protocol_register(uint16_t type,
   proto->next = protocols;
   protocols = proto;
   infof("registered, type=0x%04x", type);
+  return 0;
 }
 
 int net_input_handler(uint16_t type, const uint8_t *data, size_t len,
