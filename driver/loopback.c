@@ -86,7 +86,7 @@ struct net_device *loopback_init(void) {
   struct loopback *lo;
 
   dev = net_device_alloc();
-  dev->type = NET_DEVICE_FLAG_LOOPBACK;
+  dev->type = NET_DEVICE_TYPE_LOOPBACK;
   dev->mtu = LOOPBACK_MTU;
   dev->alen = 0;
   dev->hlen = 0;
