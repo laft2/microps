@@ -47,7 +47,7 @@ int net_device_register(struct net_device *dev) {
   snprintf(dev->name, sizeof(dev->name), "net%d", dev->index);
   dev->next = devices;
   devices = dev;
-  infof("registered, dev=%s, type=0x%04x, dev->name, dev->type");
+  infof("registered, dev=%s, type=0x%04x", dev->name, dev->type);
   return 0;
 }
 
@@ -112,6 +112,7 @@ struct net_iface *net_device_get_iface(struct net_device *dev, int family) {
   return NULL;
 }
 
+// type: NET_PROTOCOL_TYPE_*
 int net_device_output(struct net_device *dev, uint16_t type,
                       const uint8_t *data, size_t len, const void *dst) {
   if (!NET_DEVICE_IS_UP(dev)) {
@@ -122,7 +123,7 @@ int net_device_output(struct net_device *dev, uint16_t type,
     errorf("too long, dev=%s, mtu=%u, len=%zu", dev->name, dev->mtu, len);
     return -1;
   }
-  debugf("dev=%s, type=0x%04x, len=%zu", dev->name, dev->mtu, len);
+  debugf("dev=%s, type=0x%04x, len=%zu", dev->name, type, len);
   debugdump(data, len);
   if (dev->ops->transmit(dev, type, data, len, dst) == -1) {
     errorf("device transmit failure, dev=%s, len=%zu", dev->name, len);
@@ -199,7 +200,7 @@ int net_softirq_handler(void) {
       }
       debugf("queue popped (num:%u), dev=%s, type=0x%04x, len=%zu",
              proto->queue.num, entry->dev->name, proto->type, entry->len);
-      debugdump(data, len);
+      debugdump(entry->data, entry->len);
       proto->handler(entry->data, entry->len, entry->dev);
       memory_free(entry);
     }

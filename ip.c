@@ -172,9 +172,10 @@ int ip_protocol_register(uint8_t type,
     }
   }
 
-  entry = memory_alloc(sizeof(entry));
+  entry = memory_alloc(sizeof(*entry));
   if (!entry) {
     errorf("memory_alloc() failure");
+    return -1;
   }
   entry->type = type;
   entry->handler = handler;
@@ -242,11 +243,10 @@ static void ip_input(const uint8_t *data, size_t len, struct net_device *dev) {
          ip_addr_ntop(iface->unicast, addr, sizeof(addr)), hdr->protocol,
          total);
   ip_dump(data, total);
-
   for (struct ip_protocol *proto = protocols; proto; proto = proto->next) {
     if (proto->type == hdr->protocol) {
-      proto->handler(data + offset, sizeof(data) - offset, hdr->src, hdr->dst,
-                     iface);
+
+      proto->handler(data + hlen, total - hlen, hdr->src, hdr->dst, iface);
       return;
     }
   }
@@ -267,8 +267,8 @@ static int ip_output_device(struct ip_iface *iface, const uint8_t *data,
     }
   }
 
-  return net_device_output(NET_IFACE(iface)->dev, NET_DEVICE_TYPE_ETHERNET,
-                           data, len, (void *)dst);
+  return net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IP, data,
+                           len, hwaddr);
 }
 
 static ssize_t ip_output_core(struct ip_iface *iface, uint8_t protocol,
@@ -280,19 +280,20 @@ static ssize_t ip_output_core(struct ip_iface *iface, uint8_t protocol,
   char addr[IP_ADDR_STR_LEN];
 
   hdr = (struct ip_hdr *)buf;
-  uint8_t v = 4, hl = IP_HDR_SIZE_MIN >> 2;
-  hdr->vhl = v << 2 | hl;
+  hlen = sizeof(*hdr);
+  hdr->vhl = IP_VERSION_IPV4 << 4 | hlen >> 2;
   hdr->tos = 0;
+  total = hlen + len;
   hdr->total = hton16(total);
   hdr->id = hton16(id);
   hdr->offset = hton16(offset);
-  hdr->ttl = 255;
+  hdr->ttl = 0xff;
   hdr->protocol = protocol;
   hdr->sum = 0;
   hdr->src = src;
   hdr->dst = dst;
-  hdr->sum = cksum16((uint16_t *)buf, hl << 2, 0);
-  strncpy(&buf[IP_HDR_SIZE_MIN], data, len);
+  hdr->sum = cksum16((uint16_t *)buf, hlen, 0);
+  memcpy(hdr + 1, data, len);
 
   debugf("dev=%s, dst=%s, protocol=%u, len=%u", NET_IFACE(iface)->dev->name,
          ip_addr_ntop(dst, addr, sizeof(addr)), protocol, total);

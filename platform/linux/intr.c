@@ -82,6 +82,7 @@ static void *intr_thread(void *arg) {
       terminate = 1;
       break;
     case SIGUSR1:
+
       net_softirq_handler();
       break;
     default:
