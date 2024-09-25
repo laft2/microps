@@ -162,7 +162,28 @@ struct ip_iface *ip_iface_select(ip_addr_t addr) {
 int ip_protocol_register(uint8_t type,
                          void (*handler)(const uint8_t *data, size_t len,
                                          ip_addr_t src, ip_addr_t dst,
-                                         struct ip_iface *iface)) {}
+                                         struct ip_iface *iface)) {
+  struct ip_protocol *entry;
+
+  for (entry = protocols; entry; entry = entry->next) {
+    if (entry->type == type) {
+      errorf("already registered, type=0x%04x", type);
+      return -1;
+    }
+  }
+
+  entry = memory_alloc(sizeof(entry));
+  if (!entry) {
+    errorf("memory_alloc() failure");
+  }
+  entry->type = type;
+  entry->handler = handler;
+  entry->next = protocols;
+  protocols = entry;
+
+  infof("registered, type=%u", entry->type);
+  return 0;
+}
 
 static void ip_input(const uint8_t *data, size_t len, struct net_device *dev) {
   struct ip_hdr *hdr;
@@ -221,6 +242,15 @@ static void ip_input(const uint8_t *data, size_t len, struct net_device *dev) {
          ip_addr_ntop(iface->unicast, addr, sizeof(addr)), hdr->protocol,
          total);
   ip_dump(data, total);
+
+  for (struct ip_protocol *proto = protocols; proto; proto = proto->next) {
+    if (proto->type == hdr->protocol) {
+      proto->handler(data + offset, sizeof(data) - offset, hdr->src, hdr->dst,
+                     iface);
+      return;
+    }
+  }
+  /* unsupported protocol */
 }
 
 static int ip_output_device(struct ip_iface *iface, const uint8_t *data,
