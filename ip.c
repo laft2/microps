@@ -197,7 +197,7 @@ static void ip_input(const uint8_t *data, size_t len, struct net_device *dev) {
   ip_addr_ntop(hdr->dst, addr, sizeof(addr));
   int is_this_host_address = 0;
   is_this_host_address |= ip_iface_select(hdr->dst) != NULL;
-  is_this_host_address |= strcmp(addr, "255.255.255.255") == 0;
+  is_this_host_address |= hdr->dst == IP_ADDR_BROADCAST;
   is_this_host_address |= (hdr->dst & ~iface->netmask) == ~iface->netmask;
   if (!is_this_host_address) {
     return;
