@@ -34,6 +34,14 @@ struct ip_protocol {
                   struct ip_iface *iface);
 };
 
+struct ip_route {
+  struct ip_route *next;
+  ip_addr_t network;
+  ip_addr_t netmask;
+  ip_addr_t nexthop;
+  struct ip_iface *iface;
+};
+
 const ip_addr_t IP_ADDR_ANY = 0x00000000;
 const ip_addr_t IP_ADDR_BROADCAST = 0xffffffff;
 
@@ -41,6 +49,7 @@ const ip_addr_t IP_ADDR_BROADCAST = 0xffffffff;
  * protect these lists with a mutex */
 static struct ip_iface *ifaces;
 static struct ip_protocol *protocols;
+static struct ip_route *routes;
 
 int ip_addr_pton(const char *p, ip_addr_t *n) {
   char *sp, *ep;
@@ -105,6 +114,20 @@ static void ip_dump(const uint8_t *data, size_t len) {
 #endif
   funlockfile(stderr);
 }
+
+/* NOTE: must not be call after net_run() */
+static struct ip_route *ip_route_add(ip_addr_t network, ip_addr_t netmask,
+                                     ip_addr_t nexthop,
+                                     struct ip_iface *iface) {}
+
+static struct ip_route *ip_route_lookup(ip_addr_t dst) {}
+
+/* NOTE: must not be call after net_run() */
+int ip_route_set_default_gateway(struct ip_iface *iface, const char *gateway) {
+  return 0;
+}
+
+struct ip_iface *ip_route_get_iface(ip_addr_t dst) { return NULL; }
 
 struct ip_iface *ip_iface_alloc(const char *unicast, const char *netmask) {
   struct ip_iface *iface;
@@ -325,20 +348,6 @@ ssize_t ip_output(uint8_t protocol, const uint8_t *data, size_t len,
   if (src == IP_ADDR_ANY) {
     errorf("ip routing is not implemented yet");
     return -1;
-  } else { /* NOTE: I'll rewrite this block later. */
-    iface = ip_iface_select(src);
-    if (!iface) {
-      errorf("ip_iface_select() not found");
-      return -1;
-    }
-
-    bool is_reachable = false;
-    is_reachable |= (dst & iface->netmask) == (iface->unicast & iface->netmask);
-    is_reachable |= dst == IP_ADDR_BROADCAST;
-    if (!is_reachable) {
-      errorf("dst is not reachable");
-      return -1;
-    }
   }
   if (NET_IFACE(iface)->dev->mtu < IP_HDR_SIZE_MIN + len) {
     errorf("too long, dev=%s, mtu=%u < %zu", NET_IFACE(iface)->dev->name,
