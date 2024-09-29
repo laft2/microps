@@ -102,11 +102,12 @@ void icmp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst,
   debugdump(data, len);
   icmp_dump(data, len);
 
+  size_t offset = ICMP_HDR_SIZE;
   switch (hdr->type) {
   case ICMP_TYPE_ECHO:
     /* Responds with the address of the received interface. */
-    if (icmp_output(ICMP_TYPE_ECHOREPLY, hdr->code, hdr->values, data, len, dst,
-                    src) == -1) {
+    if (icmp_output(ICMP_TYPE_ECHOREPLY, hdr->code, hdr->values, data + offset,
+                    len - offset, dst, src) == -1) {
       errorf("icmp_output() failure");
       return;
     }
