@@ -83,7 +83,7 @@ static int intr_timer_setup(struct itimerspec *interval) {
 }
 
 static void *intr_thread(void *arg) {
-  const struct timespec ts = {0, 1000000}; /* 1ms */
+  const struct timespec ts = {0, 10000000}; /* 1ms */
   struct itimerspec interval = {ts, ts};
   int terminate = 0, sig, err;
   struct irq_entry *entry;
