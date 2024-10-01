@@ -39,6 +39,7 @@ struct udp_pcb {
   int state;
   struct ip_endpoint local;
   struct queue_head queue; /* receive queue */
+  int wc;                  /* wait count */
 };
 
 struct udp_queue_entry {
@@ -86,6 +87,10 @@ static struct udp_pcb *udp_pcb_alloc(void) {
 static void udp_pcb_release(struct udp_pcb *pcb) {
   struct queue_entry *entry;
 
+  if (pcb->wc) {
+    pcb->state = UDP_PCB_STATE_CLOSING;
+    return;
+  }
   pcb->state = UDP_PCB_STATE_FREE;
   pcb->local.addr = IP_ADDR_ANY;
   pcb->local.port = 0;
@@ -163,7 +168,8 @@ static void udp_input(const uint8_t *data, size_t len, ip_addr_t src,
   }
   debugf("%s:%d => %s:%d, len=%zu (payload=%zu)",
          ip_addr_ntop(src, addr1, sizeof(addr1)), ntoh16(hdr->src),
-         ip_addr_ntop(dst, addr2, sizeof(addr2)), len, len - sizeof(*hdr));
+         ip_addr_ntop(dst, addr2, sizeof(addr2)), ntoh16(hdr->dst), len,
+         len - sizeof(*hdr));
   udp_dump(data, len);
   mutex_lock(&mutex);
   pcb = udp_pcb_select(dst, hdr->dst);
@@ -179,9 +185,9 @@ static void udp_input(const uint8_t *data, size_t len, ip_addr_t src,
     return;
   }
   entry->foreign.addr = src;
-  entry->foreign.port = ntoh16(hdr->src);
-  entry->len = len;
-  memcpy(entry->data, data, len);
+  entry->foreign.port = hdr->src;
+  entry->len = len - sizeof(*hdr);
+  memcpy(entry->data, hdr + 1, entry->len);
   queue_push(&pcb->queue, (void *)entry);
   debugf("queue pushed: id=%d, num=%d", udp_pcb_id(pcb), pcb->queue.num);
   mutex_unlock(&mutex);
@@ -220,7 +226,11 @@ ssize_t udp_output(struct ip_endpoint *src, struct ip_endpoint *dst,
          ip_endpoint_ntop(dst, ep2, sizeof(ep2)), total, len);
   udp_dump((uint8_t *)hdr, total);
 
-  ip_output(IP_PROTOCOL_UDP, buf, total, src->addr, dst->addr);
+  if (ip_output(IP_PROTOCOL_UDP, (uint8_t *)hdr, total, src->addr, dst->addr) ==
+      -1) {
+    errorf("ip_output() failure");
+    return -1;
+  }
   return len;
 }
 
@@ -238,20 +248,30 @@ int udp_init(void) {
 
 int udp_open(void) {
   struct udp_pcb *pcb = udp_pcb_alloc();
+  int id;
+
+  mutex_lock(&mutex);
   if (!pcb) {
     errorf("udp_pcb_alloc() failure");
+    mutex_unlock(&mutex);
     return -1;
   }
-  return udp_pcb_id(pcb);
+  id = udp_pcb_id(pcb);
+  mutex_unlock(&mutex);
+  return id;
 }
 
 int udp_close(int id) {
   struct udp_pcb *pcb = udp_pcb_get(id);
+
+  mutex_lock(&mutex);
   if (!pcb) {
     errorf("udp_pcb_get() failure");
+    mutex_unlock(&mutex);
     return -1;
   }
   udp_pcb_release(pcb);
+  mutex_unlock(&mutex);
   return 0;
 }
 
@@ -279,12 +299,90 @@ int udp_bind(int id, struct ip_endpoint *local) {
   return 0;
 }
 
-ssize_t udp_sendto(int id, uint8_t *buf, size_t len,
+ssize_t udp_sendto(int id, uint8_t *data, size_t len,
                    struct ip_endpoint *foreign) {
-  return 0;
+  struct udp_pcb *pcb;
+  struct ip_endpoint local;
+  struct ip_iface *iface;
+  char addr[IP_ADDR_STR_LEN];
+  uint32_t p;
+
+  mutex_lock(&mutex);
+  pcb = udp_pcb_get(id);
+  if (!pcb) {
+    errorf("pcb not found, id=%d", id);
+    mutex_unlock(&mutex);
+    return -1;
+  }
+  local.addr = pcb->local.addr;
+  if (local.addr == IP_ADDR_ANY) {
+    iface = ip_route_get_iface(foreign->addr);
+    if (!iface) {
+      errorf("iface not found that can reach foreign address, addr=%s",
+             ip_addr_ntop(foreign->addr, addr, sizeof(addr)));
+      mutex_unlock(&mutex);
+      return -1;
+    }
+    local.addr = iface->unicast;
+    debugf("select local address, addr=%s",
+           ip_addr_ntop(local.addr, addr, sizeof(addr)));
+  }
+  if (!pcb->local.port) {
+    for (p = UDP_SOURCE_PORT_MIN; p <= UDP_SOURCE_PORT_MAX; p++) {
+      if (!udp_pcb_select(local.addr, hton16(p))) {
+        pcb->local.port = hton16(p);
+        debugf("dynamic assign local port, port=%d", p);
+        break;
+      }
+    }
+    if (!pcb->local.port) {
+      debugf("failed to dynamic assign local port, addr=%s",
+             ip_addr_ntop(local.addr, addr, sizeof(addr)));
+      mutex_unlock(&mutex);
+      return -1;
+    }
+  }
+  local.port = pcb->local.port;
+  mutex_unlock(&mutex);
+  return udp_output(&local, foreign, data, len);
 }
 
 ssize_t udp_recvfrom(int id, uint8_t *buf, size_t size,
                      struct ip_endpoint *foreign) {
-  return 0;
+  struct udp_pcb *pcb;
+  struct udp_queue_entry *entry;
+  ssize_t len;
+
+  mutex_lock(&mutex);
+  pcb = udp_pcb_get(id);
+  if (!pcb) {
+    errorf("pcb not found, id=%d", id);
+    mutex_unlock(&mutex);
+    return -1;
+  }
+  while (1) {
+    entry = queue_pop(&pcb->queue);
+    if (entry) {
+      break;
+    }
+    pcb->wc++;
+    mutex_unlock(&mutex);
+    sleep(1);
+    mutex_lock(&mutex);
+    pcb->wc--;
+    if (pcb->state == UDP_PCB_STATE_CLOSING) {
+      debugf("closed");
+      udp_pcb_release(pcb);
+      mutex_unlock(&mutex);
+      return -1;
+    }
+  }
+  mutex_unlock(&mutex);
+  if (foreign) {
+    *foreign = entry->foreign;
+  }
+  len = MIN(size, entry->len); /* truncate */
+  memcpy(buf, entry->data, len);
+  memory_free(entry);
+  return len;
 }
