@@ -250,8 +250,8 @@ int ip_iface_register(struct net_device *dev, struct ip_iface *iface) {
     return -1;
   }
 
-  ip_route_add(iface->broadcast & iface->netmask, iface->netmask,
-               iface->unicast, iface);
+  ip_route_add(iface->unicast & iface->netmask, iface->netmask, IP_ADDR_ANY,
+               iface);
 
   iface->next = ifaces;
   ifaces = iface;
