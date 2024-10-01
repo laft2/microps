@@ -180,11 +180,10 @@ static int arp_request(struct net_iface *iface, ip_addr_t tpa) {
   request.hdr.hln = ETHER_ADDR_LEN;
   request.hdr.pln = IP_ADDR_LEN;
   request.hdr.op = hton16(ARP_OP_REQUEST);
-  memcpy(&request.sha, iface->dev->addr, sizeof(request.sha));
-  memcpy(&request.spa, &((struct ip_iface *)iface)->unicast,
-         sizeof(request.spa));
-  memcpy(&request.tha, iface->dev->broadcast, sizeof(request.tha));
-  memcpy(&request.tpa, &tpa, sizeof(request.tpa));
+  memcpy(&request.sha, iface->dev->addr, ETHER_ADDR_LEN);
+  memcpy(&request.spa, &((struct ip_iface *)iface)->unicast, IP_ADDR_LEN);
+  memset(&request.tha, 0, ETHER_ADDR_LEN);
+  memcpy(&request.tpa, &tpa, IP_ADDR_LEN);
 
   debugf("dev=%s, len=%zu", iface->dev->name, sizeof(request));
   arp_dump((uint8_t *)&request, sizeof(request));
