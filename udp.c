@@ -147,8 +147,6 @@ static void udp_input(const uint8_t *data, size_t len, ip_addr_t src,
   struct udp_pcb *pcb;
   struct udp_queue_entry *entry;
 
-  warnf("called");
-
   if (len < sizeof(*hdr)) {
     errorf("too short");
     return;
