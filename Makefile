@@ -38,6 +38,7 @@ TESTS = test/step0.exe \
         test/step22.exe \
         test/step23.exe \
         test/step24.exe \
+        test/step25.exe \
 
 CFLAGS := $(CFLAGS) -Og -g2 -W -Wall -Wno-unused-parameter -iquote .
 
